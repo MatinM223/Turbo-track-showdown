@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>12-Car Racing Game</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: #222;
+    color: #eee;
+    text-align: center;
+    user-select: none;
+    margin: 0;
+    padding: 0;
+  }
+  #gameCanvas {
+    background: #0a0a0a;
+    display: block;
+    margin: 20px auto;
+    border: 3px solid #eee;
+  }
+  #carSelection {
+    margin: 10px auto;
+    max-width: 600px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .carOption {
+    width: 70px;
+    height: 35px;
+    margin: 5px;
+    cursor: pointer;
+    border: 3px solid transparent;
+    border-radius: 5px;
+  }
+  .selected {
+    border-color: yellow;
+  }
+  #startBtn {
+    margin-top: 15px;
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  #info {
+    margin-top: 15px;
+  }
+</style>
+</head>
+<body>
+
+<h1>12-Car Racing Game</h1>
+
+<div id="carSelection"></div>
+<button id="startBtn" disabled>Start Race</button>
+
+<canvas id="gameCanvas" width="800" height="400"></canvas>
+
+<div id="info">
+  <p>Press SPACE to accelerate your car during the race!</p>
+  <p id="raceStatus"></p>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+
+  const TRACK_LENGTH = 750; // pixels to finish line
+  const CAR_WIDTH = 60;
+  const CAR_HEIGHT = 30;
+  const NUM_AI = 3;
+
+  const colors = [
+    '#FF4136', '#0074D9', '#2ECC40', '#FF851B',
+    '#B10DC9', '#FFDC00', '#001f3f', '#39CCCC',
+    '#85144b', '#3D9970', '#AAAAAA', '#F012BE'
+  ];
+
+  let playerCarIndex = null;
+  let raceStarted = false;
+  let raceFinished = false;
+  let raceStatus = '';
+  
+  // Car objects with position and speed
+  const cars = [];
+
+  function createCars() {
+    cars.length = 0;
+    // Player car (index 0) - will be set after selection
+    for(let i=0; i<1 + NUM_AI; i++) {
+      cars.push({
+        color: colors[i],
+        x: 20,
+        y: 60 + i*100,
+        speed: 0,
+        maxSpeed: 6 + Math.random() * 2,
+        acceleration: 0.15,
+        aiControlled: i !== 0,
+        finished: false,
+        finishTime: null
+      });
+    }
+  }
+
+  // Setup car selection UI
+  const carSelectionDiv = document.getElementById('carSelection');
+  colors.forEach((color, i) => {
+    const div = document.createElement('div');
+    div.className = 'carOption';
+    div.style.backgroundColor = color;
+    div.title = `Car ${i+1}`;
+    div.onclick = () => {
+      if(raceStarted) return;
+      playerCarIndex = i;
+      updateSelection();
+      document.getElementById('startBtn').disabled = false;
+    };
+    carSelectionDiv.appendChild(div);
+  });
+
+  function updateSelection() {
+    const divs = carSelectionDiv.children;
+    for(let i=0; i<divs.length; i++) {
+      divs[i].classList.toggle('selected', i === playerCarIndex);
+    }
+  }
+
+  // Start race button
+  document.getElementById('startBtn').onclick = () => {
+    if(playerCarIndex === null) return;
+    raceStarted = true;
+    raceFinished = false;
+    raceStatus = '';
+    resetRace();
+    requestAnimationFrame(gameLoop);
+  };
+
+  function resetRace() {
+    createCars();
+    // Set player car color and position
+    cars[0].color = colors[playerCarIndex];
+    cars[0].x = 20;
+    cars[0].speed = 0;
+    cars[0].finished = false;
+    cars[0].finishTime = null;
+
+    // Setup AI cars with random colors different from player
+    let aiColors = colors.filter((_, i) => i !== playerCarIndex);
+    for(let i=1; i <= NUM_AI; i++) {
+      cars[i].color = aiColors[i-1];
+      cars[i].x = 20;
+      cars[i].speed = 2 + Math.random() * 3;
+      cars[i].maxSpeed = 6 + Math.random() * 2;
+      cars[i].acceleration = 0.05 + Math.random() * 0.1;
+      cars[i].finished = false;
+      cars[i].finishTime = null;
+    }
+
+    document.getElementById('raceStatus').textContent = '';
+  }
+
+  // Player acceleration on spacebar
+  let accelerating = false;
+  window.addEventListener('keydown', e => {
+    if(e.code === 'Space') {
+      accelerating = true;
+      e.preventDefault();
+    }
+  });
+  window.addEventListener('keyup', e => {
+    if(e.code === 'Space') {
+      accelerating = false;
+      e.preventDefault();
+    }
+  });
+
+  function updateCars(dt) {
+    // Player car
+    if(!cars[0].finished) {
+      if(accelerating) {
+        cars[0].speed += cars[0].acceleration;
+        if(cars[0].speed > cars[0].maxSpeed) cars[0].speed = cars[0].maxSpeed;
+      } else {
+        // natural slow down
+        cars[0].speed -= 0.05;
+        if(cars[0].speed < 0) cars[0].speed = 0;
+      }
+      cars[0].x += cars[0].speed;
+      if(cars[0].x >= TRACK_LENGTH) {
+        cars[0].finished = true;
+        cars[0].finishTime = Date.now();
+      }
+    }
+
+    // AI cars
+    for(let i=1; i<=NUM_AI; i++) {
+      if(cars[i].finished) continue;
+      // AI tries to keep speed near maxSpeed with some randomness
+      let targetSpeed = cars[i].maxSpeed * (0.8 + Math.random() * 0.4);
+      if(cars[i].speed < targetSpeed) cars[i].speed += cars[i].acceleration;
+      else cars[i].speed -= cars[i].acceleration;
+      if(cars[i].speed < 0) cars[i].speed = 0;
+      cars[i].x += cars[i].speed;
+      if(cars[i].x >= TRACK_LENGTH) {
+        cars[i].finished = true;
+        cars[i].finishTime = Date.now();
+      }
+    }
+  }
+
+  function drawTrack() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    // Draw finish line
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(TRACK_LENGTH + CAR_WIDTH/2, 0, 5, canvas.height);
+
+    // Draw lanes
+    for(let i=0; i<=NUM_AI; i++) {
+      let y = 75 + i*100 - CAR_HEIGHT/2;
+      ctx.strokeStyle = '#555';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(canvas.width, y);
+      ctx.stroke();
+    }
+  }
+
+  function drawCars() {
+    cars.forEach(car => {
+      ctx.fillStyle = car.color;
+      ctx.fillRect(car.x, car.y - CAR_HEIGHT/2, CAR_WIDTH, CAR_HEIGHT);
+      // car "windows"
+      ctx.fillStyle = '#222';
+      ctx.fillRect(car.x + 15, car.y - 10, 30, 15);
+    });
+  }
+
+  function gameLoop() {
+    if(!raceStarted) return;
+
+    updateCars();
+    drawTrack();
+    drawCars();
+
+    // Check finish order
+    if(!raceFinished && cars.filter(c => c.finished).length > 0) {
+      // Get first finisher
+      let finishers = cars.filter(c => c.finished);
+      finishers.sort((a,b) => a.finishTime - b.finishTime);
+      raceFinished = true;
+      raceStatus = (finishers[0] === cars[0]) ? 'You Win! 🏆' : 'You Lose! AI Won.';
+      document.getElementById('raceStatus').textContent = raceStatus;
+    }
+
+    if(!raceFinished) {
+      requestAnimationFrame(gameLoop);
+    }
+  }
+})();
+</script>
+
+</body>
+</html>
